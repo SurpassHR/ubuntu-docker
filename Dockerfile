@@ -1,88 +1,81 @@
 #
-# Dockerfile for a Universal Development and CI/CD Environment
+# Dockerfile for a Universal Development Environment with 1Panel
 #
-# This Dockerfile sets up a comprehensive environment based on Ubuntu 22.04,
-# including Docker-in-Docker (dind), Docker Compose, and a standard toolchain.
+# This Dockerfile builds a comprehensive environment based on Ubuntu 22.04.
+# It includes Docker-in-Docker, a full 1Panel installation, and uses
+# Supervisord to manage background services, providing an interactive shell.
 #
 
 # --- Base Image ---
-# Use Ubuntu 22.04 as the base for a stable and widely supported environment.
 FROM ubuntu:22.04
 
 # --- Environment Variables ---
-# Set DEBIAN_FRONTEND to noninteractive to prevent prompts during package installation,
-# enabling fully automated builds.
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Shanghai \
+    SSH_USER=ubuntu \
+    SSH_PASSWORD=ubuntu!23
 
-# --- Layer 1: Core Toolchain and Dependencies ---
-# Install essential tools and dependencies for dind. This layer is separated
-# to leverage Docker's build cache, as these packages change infrequently.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        # For general use and scripting
-        git \
-        curl \
-        wget \
-        vim \
-        sudo \
-        unzip \
-        jq \
-        procps \
-        # For networking inspection
-        net-tools \
-        # Dependencies for Docker installation
-        ca-certificates \
-        gnupg && \
-    # Clean up apt cache to reduce image size
-    rm -rf /var/lib/apt/lists/*
+ARG PANELVER=v1.10.32-lts
 
-# --- Layer 2: Docker Engine (dind) Installation ---
-# Install the latest stable version of Docker Engine following the official guide.
-# This allows running Docker commands inside the container.
-RUN install -m 0755 -d /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    chmod a+r /etc/apt/keyrings/docker.gpg && \
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        docker-ce \
-        docker-ce-cli \
-        containerd.io \
-        docker-buildx-plugin && \
-    # Clean up apt cache
-    rm -rf /var/lib/apt/lists/*
+COPY entrypoint.sh /entrypoint.sh
+COPY reboot.sh /usr/local/sbin/reboot
 
-# --- Layer 3: Docker Compose Installation ---
-# Install the latest version of Docker Compose V2.
-# The version is dynamically fetched to ensure it's always up-to-date.
-RUN DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name) && \
-    DOCKER_CLI_PLUGINS_DIR="/usr/local/lib/docker/cli-plugins" && \
-    mkdir -p ${DOCKER_CLI_PLUGINS_DIR} && \
-    curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o ${DOCKER_CLI_PLUGINS_DIR}/docker-compose && \
-    chmod +x ${DOCKER_CLI_PLUGINS_DIR}/docker-compose
+# --- Layer 1: Core Dependencies & Supervisor ---
+# Install essential tools, dind dependencies, and Supervisor.
+RUN apt-get update; \
+    apt-get install -y tzdata openssh-server sudo curl ca-certificates wget vim net-tools supervisor cron unzip iputils-ping telnet git iproute2 mysql-server --no-install-recommends; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    mkdir -p /var/run/sshd /var/log/mysql /var/run/mysqld; \
+    chown -R mysql:mysql /var/log/mysql /var/run/mysqld; \
+    chmod +x /entrypoint.sh; \
+    chmod +x /usr/local/sbin/reboot; \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime; \
+    echo $TZ > /etc/timezone
 
-# --- Layer 4: Pre-provision Code ---
-# Create a workspace directory and clone specified git repositories.
-# This step is placed later in the build process because code changes more
-# frequently than the base environment.
-RUN mkdir -p /apps && \
-    git clone https://github.com/okxlin/docker-1panel.git /apps/docker-1panel && \
-    git clone https://github.com/SurpassHR/gemini-balance.git /apps/gemini-balance
+# --- Layer 2: 1Panel Installation ---
+RUN mkdir -p /home/hr0530/apps && git clone https://github.com/SurpassHR/gemini-balance.git /home/hr0530/apps/gemini-balance
+# This layer handles the full installation of 1Panel.
+WORKDIR /home/hr0530/apps/1panel
 
-# --- Layer 5: Final Configuration ---
-# Set the default working directory for the container.
-WORKDIR /apps
+# Copy the necessary installation scripts provided by the user.
+COPY install.override.sh .
+COPY update_app_version.sh .
 
-# Copy the entrypoint script and make it executable.
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Download and run the 1Panel installer.
+RUN INSTALL_MODE="stable" && \
+    ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "armhf" ]; then ARCH="armv7"; fi && \
+    if [ "$ARCH" = "ppc64el" ]; then ARCH="ppc64le"; fi && \
+    PACKAGE_FILE_NAME="1panel-${PANELVER}-linux-${ARCH}.tar.gz" && \
+    PACKAGE_DOWNLOAD_URL="https://resource.fit2cloud.com/1panel/package/${INSTALL_MODE}/${PANELVER}/release/${PACKAGE_FILE_NAME}" && \
+    echo "Downloading ${PACKAGE_DOWNLOAD_URL}" && \
+    curl -sSL -o ${PACKAGE_FILE_NAME} "$PACKAGE_DOWNLOAD_URL" && \
+    tar zxvf ${PACKAGE_FILE_NAME} --strip-components 1 && \
+    # Replace the default install script with the override version
+    rm -f /home/hr0530/apps/1panel/install.sh && \
+    mv -f /home/hr0530/apps/1panel/install.override.sh /home/hr0530/apps/1panel/install.sh && \
+    chmod +x /home/hr0530/apps/1panel/install.sh /home/hr0530/apps/1panel/update_app_version.sh && \
+    # Run the installer
+    bash /home/hr0530/apps/1panel/install.sh && \
+    # Move the version update script to the final location for the startup script to use
+    mv /home/hr0530/apps/1panel/update_app_version.sh /opt/1panel/ && \
+    # Clean up installation files
+    rm -rf /home/hr0530/apps/1panel/*
 
-# Set the entrypoint to our custom script.
-ENTRYPOINT ["entrypoint.sh"]
+# --- Layer 3: Final Configuration ---
+# Copy custom scripts, set permissions, and define entrypoint.
+COPY start-1panel.sh /usr/local/bin/start-1panel.sh
 
-# Provide a default command. When the container starts, it will launch a bash shell,
-# allowing for interactive use.
-CMD ["bash"]
+RUN chmod +x /usr/local/bin/start-1panel.sh /entrypoint.sh
+
+# Set the default working directory.
+WORKDIR /root
+
+# Expose 1Panel port
+EXPOSE 10086 22
+
+# Set the main entrypoint.
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/usr/sbin/sshd", "-D"]
