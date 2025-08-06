@@ -28,6 +28,10 @@ jobs:
       - name: Set date-based tag
         run: echo "DATE_TAG=$(date +'%y.%-m.%-d')" >> $GITHUB_ENV
 
+      - name: Convert repository name to lowercase
+        id: repo_lowercase
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v5
         with:
@@ -35,5 +39,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ env.DATE_TAG }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ env.name }}:${{ env.DATE_TAG }}
+            ghcr.io/${{ env.name }}:latest
