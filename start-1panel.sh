@@ -6,7 +6,7 @@
 
 set -e
 
-PANEL_BASE_DIR="/opt/1panel"
+PANEL_BASE_DIR="/home/hr0530/1panel"
 DB_FILE="${PANEL_BASE_DIR}/db/1Panel.db"
 UPDATE_SCRIPT_PATH="${PANEL_BASE_DIR}/update_app_version.sh"
 

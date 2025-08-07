@@ -23,11 +23,27 @@ COPY reboot.sh /usr/local/sbin/reboot
 # --- Layer 1: Core Dependencies & Supervisor ---
 # Install essential tools, dind dependencies, and Supervisor.
 RUN apt-get update; \
-    apt-get install -y tzdata openssh-server sudo curl ca-certificates wget vim net-tools supervisor cron unzip iputils-ping telnet git iproute2 mysql-server --no-install-recommends; \
+    apt-get install -y --no-install-recommends \
+    tzdata \
+    openssh-server \
+    sudo \
+    curl \
+    ca-certificates \
+    wget \
+    vim \
+    net-tools \
+    supervisor \
+    cron \
+    unzip \
+    iputils-ping \
+    telnet \
+    git \
+    iproute2 \
+    mysql-server; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
-    mkdir -p /var/run/sshd /var/log/mysql /var/run/mysqld; \
-    chown -R mysql:mysql /var/log/mysql /var/run/mysqld; \
+    mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/mysql /home/hr0530/1panel; \
+    chown -R mysql:mysql /var/run/mysqld /home/hr0530/mysql; \
     chmod +x /entrypoint.sh; \
     chmod +x /usr/local/sbin/reboot; \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime; \
@@ -57,20 +73,25 @@ RUN INSTALL_MODE="stable" && \
     mv -f /home/hr0530/apps/1panel/install.override.sh /home/hr0530/apps/1panel/install.sh && \
     chmod +x /home/hr0530/apps/1panel/install.sh /home/hr0530/apps/1panel/update_app_version.sh && \
     # Run the installer
-    bash /home/hr0530/apps/1panel/install.sh && \
+    # Specify the installation directory to be within the persistent volume
+    bash /home/hr0530/apps/1panel/install.sh --install-dir /home/hr0530/1panel && \
     # Move the version update script to the final location for the startup script to use
-    mv /home/hr0530/apps/1panel/update_app_version.sh /opt/1panel/ && \
+    mv /home/hr0530/apps/1panel/update_app_version.sh /home/hr0530/1panel/ && \
     # Clean up installation files
     rm -rf /home/hr0530/apps/1panel/*
 
 # --- Layer 3: Final Configuration ---
 # Copy custom scripts, set permissions, and define entrypoint.
 COPY start-1panel.sh /usr/local/bin/start-1panel.sh
+COPY start-mysql.sh /usr/local/bin/start-mysql.sh
 
-RUN chmod +x /usr/local/bin/start-1panel.sh /entrypoint.sh
+RUN chmod +x /usr/local/bin/start-1panel.sh /usr/local/bin/start-mysql.sh /entrypoint.sh
 
 # Set the default working directory.
 WORKDIR /root
+
+# Declare the single, unified persistent volume mount point.
+VOLUME /home/hr0530
 
 # Expose 1Panel port
 EXPOSE 10086 22
