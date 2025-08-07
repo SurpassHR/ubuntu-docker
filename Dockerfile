@@ -22,6 +22,8 @@ COPY reboot.sh /usr/local/sbin/reboot
 
 # --- Layer 1: Core Dependencies & Supervisor ---
 # Install essential tools, dind dependencies, and Supervisor.
+RUN groupadd -r mysql && useradd -r -g mysql mysql
+
 RUN apt-get update; \
     apt-get install -y --no-install-recommends \
     tzdata \
@@ -39,18 +41,24 @@ RUN apt-get update; \
     telnet \
     git \
     iproute2 \
-    mysql-server; \
-    apt-get clean; \
+    # Pre-configure debconf to avoid interactive prompts during mysql installation
+    && { \
+    echo mysql-community-server mysql-community-server/root-pass password ''; \
+    echo mysql-community-server mysql-community-server/re-root-pass password ''; \
+    } | debconf-set-selections \
+    && apt-get install -y mysql-server \
+    && apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
-    mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/mysql /home/hr0530/1panel; \
-    chown -R mysql:mysql /var/run/mysqld /home/hr0530/mysql; \
+    # Create necessary directories, including the build-time target for 1panel
+    mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/1panel; \
+    # Set sticky bit on mysqld run directory to allow socket creation by any user in the mysql group
+    chmod 1777 /var/run/mysqld; \
     chmod +x /entrypoint.sh; \
     chmod +x /usr/local/sbin/reboot; \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime; \
     echo $TZ > /etc/timezone
 
 # --- Layer 2: 1Panel Installation ---
-RUN mkdir -p /home/hr0530/apps && git clone https://github.com/SurpassHR/gemini-balance.git /home/hr0530/apps/gemini-balance
 # This layer handles the full installation of 1Panel.
 WORKDIR /home/hr0530/apps/1panel
 
