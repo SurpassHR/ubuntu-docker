@@ -36,7 +36,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # 下载、解压并配置 Python 源代码。
-RUN wget https://www.python.org/ftp/python/3.12.11/Python-3.12.11.tgz && \
+RUN wget --no-check-certificate https://www.python.org/ftp/python/3.12.11/Python-3.12.11.tgz && \
     tar xvf Python-3.12.11.tgz
 
 WORKDIR /Python-3.12.11
