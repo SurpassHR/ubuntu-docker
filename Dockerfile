@@ -140,6 +140,16 @@ COPY --from=builder /usr/local/python3.12 /usr/local/python3.12
 # 设置环境变量，以便在终端中直接使用 'python3.12' 命令。
 ENV PATH="/usr/local/python3.12/bin:$PATH"
 
+# 安装 Python 3.12 的依赖包和 pip 包。
+RUN echo "export PATH=\"/usr/local/python3.12/bin:\$PATH\"" >> ~/.bashrc && \
+    echo "alias python=python3" >> ~/.bashrc && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3-venv \
+    python3-pip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # 复制并设置自定义启动脚本的权限。
 COPY start-1panel.sh /usr/local/bin/start-1panel.sh
 COPY start-mysql.sh /usr/local/bin/start-mysql.sh

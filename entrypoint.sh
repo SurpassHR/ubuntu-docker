@@ -28,11 +28,19 @@ chown -R mysql:mysql /home/hr0530/mysql
 
 # Make app directory and clone gemini-balance project
 mkdir -p /home/hr0530/apps
-if [ -d "/home/hr0530/apps/gemini-balance" ]; then
-    cd /home/hr0530/apps/gemini-balance
+GEMINI_BALANCE_DIR=/home/hr0530/apps/gemini-balance
+if [ -d "${GEMINI_BALANCE_DIR}" ]; then
+    cd ${GEMINI_BALANCE_DIR}
     git pull
+else
+    git clone https://github.com/SurpassHR/gemini-balance.git ${GEMINI_BALANCE_DIR}
 fi
-git clone https://github.com/SurpassHR/gemini-balance.git /home/hr0530/apps/gemini-balance
+# Install gemini-balance dependencies
+cd ${GEMINI_BALANCE_DIR} && python3 -m venv .venv
+source ${GEMINI_BALANCE_DIR}/.venv/bin/activate
+pip3 install -r requirements.txt
+# Start gemini-balance
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 echo "Persistent storage directories initialized."
 
