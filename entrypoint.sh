@@ -1,48 +1,80 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
+set -e
 
-useradd -m -s /bin/bash $SSH_USER
-echo "$SSH_USER:$SSH_PASSWORD" | chpasswd
-usermod -aG sudo $SSH_USER
-usermod -aG mysql $SSH_USER
-echo "$SSH_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/init-users
-echo 'PermitRootLogin no' > /etc/ssh/sshd_config.d/my_sshd.conf
+# --- Initialization Lock ---
+# Use a lock file to ensure initialization runs only once.
+INIT_LOCK_FILE="/home/hr0530/.initialized"
 
-mkdir -p /home/hr0530/boot
-chmod 755 /home/hr0530/boot
-curl https://raw.githubusercontent.com/SurpassHR/ubuntu-docker/refs/heads/essential_tools/supervisord.conf -o /home/hr0530/boot/supervisord.conf
+if [ ! -f "$INIT_LOCK_FILE" ]; then
+    echo "--- First time container startup: Initializing... ---"
 
-# --- Prepare Persistent Volume Directories ---
-# This section must run as root before supervisord starts.
-# It ensures that all necessary subdirectories in the mounted volume exist
-# and have the correct ownership, regardless of how the volume is mounted.
+    # --- User and SSH Setup ---
+    echo "Setting up user '$SSH_USER'..."
+    useradd -m -s /bin/bash "$SSH_USER"
+    echo "$SSH_USER:$SSH_PASSWORD" | chpasswd
+    usermod -aG sudo "$SSH_USER"
+    usermod -aG mysql "$SSH_USER"
+    echo "$SSH_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/init-users
+    # Secure SSH configuration
+    echo 'PermitRootLogin no' > /etc/ssh/sshd_config.d/my_sshd.conf
+    echo "User setup complete."
 
-echo "Initializing persistent storage directories in /home/hr0530..."
+    # --- Persistent Volume and App Setup ---
+    echo "Initializing persistent storage directories in /home/hr0530..."
+    mkdir -p /home/hr0530/mysql /home/hr0530/1panel /home/hr0530/apps
+    chown -R mysql:mysql /home/hr0530/mysql
+    echo "Storage directories initialized."
 
-# Create directories for all services that need persistent storage.
-mkdir -p /home/hr0530/mysql
-mkdir -p /home/hr0530/1panel
+    # --- Application Deployment ---
+    APP_DIR="/home/hr0530/apps/gemini-balance"
+    if [ ! -d "$APP_DIR" ]; then
+        echo "Cloning gemini-balance repository..."
+        git clone https://github.com/SurpassHR/gemini-balance.git "$APP_DIR"
+    else
+        echo "Repository already exists. Skipping clone."
+    fi
 
-# Set ownership for the MySQL data directory.
-# The 'mysql' user is created by the mysql-server package installation.
-chown -R mysql:mysql /home/hr0530/mysql
+    echo "Installing Python dependencies for gemini-balance..."
+    cd "$APP_DIR"
+    python3.11 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    deactivate
+    echo "Python dependencies installed."
 
-# Make app directory and clone gemini-balance project
-mkdir -p /home/hr0530/apps
-GEMINI_BALANCE_DIR=/home/hr0530/apps/gemini-balance
-if [ -d "${GEMINI_BALANCE_DIR}" ]; then
-    cd ${GEMINI_BALANCE_DIR}
-    git pull
+    # --- Database Initialization ---
+    # To initialize the database, we need mysqld running temporarily.
+    # We start it directly and safely in the background.
+    echo "Starting temporary MySQL server for initialization..."
+    /usr/bin/mysqld_safe --user=mysql &
+    MYSQLD_PID=$!
+
+    echo "Waiting for MySQL service to be ready..."
+    # Wait for the MySQL socket to become available.
+    while ! mysqladmin ping -hlocalhost --silent; do
+        echo "  ... waiting for mysqld to accept connections"
+        sleep 2
+    done
+    echo "MySQL service is ready."
+
+    echo "Initializing database from /tmp/init.sql..."
+    mysql -u root < /tmp/init.sql
+    echo "Database initialized."
+
+    # Shut down the temporary MySQL server gracefully.
+    echo "Shutting down temporary MySQL server..."
+    mysqladmin -u root shutdown
+    wait $MYSQLD_PID
+    echo "Temporary MySQL server stopped."
+
+    # --- Create Lock File ---
+    touch "$INIT_LOCK_FILE"
+    echo "--- Initialization complete. ---"
 else
-    git clone https://github.com/SurpassHR/gemini-balance.git ${GEMINI_BALANCE_DIR}
+    echo "--- Container already initialized. Skipping setup. ---"
 fi
-# Install gemini-balance dependencies
-cd ${GEMINI_BALANCE_DIR} && python3 -m venv .venv
-source ${GEMINI_BALANCE_DIR}/.venv/bin/activate
-pip3 install -r requirements.txt
-# Start gemini-balance
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-echo "Persistent storage directories initialized."
-
-
+# --- Start Services ---
+# The main CMD will now take over and run supervisord in the foreground.
+echo "Handing over to supervisord..."
 exec "$@"

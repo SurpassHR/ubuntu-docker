@@ -7,44 +7,11 @@
 # --------------------------------------------------------------------------
 
 # ==========================================================================
-# 阶段 1: 构建阶段 (builder)
-# 职责: 编译和安装特定版本的 Python。
+# 阶段 1: Python 来源 (python_source)
+# 职责: 提供一个预编译的、与最终镜像 (Ubuntu 22.04) 兼容的 Python 版本。
+#       使用官方 python:3.12-jammy 镜像可以完全避免耗时的编译过程。
 # --------------------------------------------------------------------------
-FROM ubuntu:22.04 as builder
-
-# 设置非交互式环境变量，以避免在构建过程中出现交互式提示。
-ENV DEBIAN_FRONTEND=noninteractive
-
-# 安装所有编译 Python 所需的构建依赖。
-# 这些依赖只存在于此阶段，不会被带入最终镜像，以保持最终镜像的精简。
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    wget \
-    build-essential \
-    libssl-dev \
-    zlib1g-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libgdbm-dev \
-    libdb5.3-dev \
-    libbz2-dev \
-    libexpat1-dev \
-    liblzma-dev \
-    tk-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# 下载、解压并配置 Python 源代码。
-RUN wget --no-check-certificate https://www.python.org/ftp/python/3.12.11/Python-3.12.11.tgz && \
-    tar xvf Python-3.12.11.tgz
-
-WORKDIR /Python-3.12.11
-
-# 编译并将 Python 安装到指定目录，以便在下一阶段复制。
-RUN ./configure --prefix=/usr/local/python3.12 && \
-    make && \
-    make install
+# FROM ubuntu/python:3.10-22.04_stable AS python_source
 
 
 # ==========================================================================
@@ -56,10 +23,12 @@ RUN ./configure --prefix=/usr/local/python3.12 && \
 FROM ubuntu:22.04
 
 # 设置环境变量，包括非交互式安装、时区和 SSH 凭据。
+# GEMINI_BALANCE_ENV_TYPE=docker/claw
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai \
     SSH_USER=ubuntu \
-    SSH_PASSWORD=ubuntu!23
+    SSH_PASSWORD=ubuntu!23 \
+    GEMINI_BALANCE_ENV_TYPE=docker
 
 # 定义 1Panel 版本参数。
 ARG PANELVER=v1.10.32-lts
@@ -135,34 +104,52 @@ RUN INSTALL_MODE="stable" && \
 WORKDIR /root
 
 # 从构建阶段复制编译好的 Python。
-COPY --from=builder /usr/local/python3.12 /usr/local/python3.12
+# 从 python_source 阶段复制预编译的 Python。
+# 官方镜像将 Python 安装在 /usr/local 目录中。
+# COPY --from=python_source /usr/bin/python* /usr/bin/python*
 
-# 设置环境变量，以便在终端中直接使用 'python3.12' 命令。
-ENV PATH="/usr/local/python3.12/bin:$PATH"
+# 设置环境变量，以便在终端中直接使用 'python3.10' 命令。
+# ENV PATH="/usr/local/python3.10/bin:$PATH"
 
-# 安装 Python 3.12 的依赖包和 pip 包。
-RUN echo "export PATH=\"/usr/local/python3.12/bin:\$PATH\"" >> ~/.bashrc && \
+# 安装 Python 3.10 的依赖包和 pip 包。
+RUN echo "export PATH=\"/usr/bin:$PATH\"" >> ~/.profile && \
     echo "alias python=python3" >> ~/.bashrc && \
+    . ~/.profile && \
+    . ~/.bashrc && \
     apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3-venv \
-    python3-pip && \
+    apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
+    # 使用 get-pip.py 为 python3.11 安装 pip
+    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+    python3.11 get-pip.py && \
+    rm get-pip.py && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# --- Supervisor 配置 ---
+# 复制 Supervisor 配置文件并创建日志目录。
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+RUN mkdir -p /var/log/supervisor /var/log/mysql && \
+    chown mysql:mysql /var/log/mysql
 
 # 复制并设置自定义启动脚本的权限。
 COPY start-1panel.sh /usr/local/bin/start-1panel.sh
 COPY start-mysql.sh /usr/local/bin/start-mysql.sh
-RUN chmod +x /usr/local/bin/start-1panel.sh /usr/local/bin/start-mysql.sh
+COPY start-gemini-balance.sh /usr/local/bin/start-gemini-balance.sh
+RUN chmod +x /usr/local/bin/start-1panel.sh \
+    /usr/local/bin/start-mysql.sh \
+    /usr/local/bin/start-gemini-balance.sh
 
 # 声明单个持久化卷的挂载点。
 VOLUME /home/hr0530
 
 # 暴露服务端口。
-EXPOSE 10086 22
+EXPOSE 10086 22 8000
+
+# 复制 init.sql 文件来初始化数据库
+COPY init.sql /tmp/init.sql
 
 # 设置容器启动时执行的入口点命令。
 ENTRYPOINT ["/entrypoint.sh"]
 
-# 设置入口点执行的默认命令。
-CMD ["/usr/sbin/sshd", "-D"]
+# 使用 Supervisor 管理服务
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
