@@ -21,21 +21,24 @@ if [ ! -f "$INIT_LOCK_FILE" ]; then
 
     # --- Persistent Volume and App Setup ---
     echo "Initializing persistent storage directories in /home/hr0530..."
-    mkdir -p /home/hr0530/mysql /home/hr0530/1panel /home/hr0530/apps
+    DATA_DIR="/home/hr0530/data"
+    APP_DIR="/home/hr0530/apps"
+    mkdir -p /home/hr0530/mysql /home/hr0530/1panel ${APP_DIR} ${DATA_DIR}
     chown -R mysql:mysql /home/hr0530/mysql
     echo "Storage directories initialized."
 
     # --- Application Deployment ---
-    APP_DIR="/home/hr0530/apps/gemini-balance"
-    if [ ! -d "$APP_DIR" ]; then
-        echo "Cloning gemini-balance repository..."
-        git clone https://github.com/SurpassHR/gemini-balance.git "$APP_DIR"
+    GEMINI_BALANCE="${APP_DIR}/gemini-balance"
+    if [ ! -d "${GEMINI_BALANCE}" ]; then
+        echo "Downloading gemini-balance repository..."
+        curl https://codeload.github.com/SurpassHR/gemini-balance/zip/refs/heads/main > ${DATA_DIR}/gemini-balance.zip && \
+        unzip ${DATA_DIR}/gemini-balance.zip -d "${APP_DIR}" && mv "${APP_DIR}/gemini-balance-main" "${GEMINI_BALANCE}"
     else
-        echo "Repository already exists. Skipping clone."
+        echo "Repository already exists. Skipping download."
     fi
 
     echo "Installing Python dependencies for gemini-balance..."
-    cd "$APP_DIR"
+    cd "${GEMINI_BALANCE}"
     python3.11 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt

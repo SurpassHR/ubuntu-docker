@@ -38,34 +38,39 @@ COPY entrypoint.sh /entrypoint.sh
 COPY reboot.sh /usr/local/sbin/reboot
 
 # --- 核心依赖和服务安装 ---
-# 安装核心系统工具、SSH 服务、Supervisor 和 MySQL 服务。
-RUN groupadd -r mysql && useradd -r -g mysql mysql && \
-    apt-get update && \
+# 将所有安装和配置步骤合并到一个 RUN 指令中，以减少镜像层数和大小。
+RUN apt-get update && \
+    # --- 系统和目录配置 (前置) ---
+    # 先创建 mysql 用户和组，避免与 mysql-server 安装冲突
+    groupadd -r mysql && useradd -r -g mysql mysql && \
+    # 安装运行时所需的依赖
     apt-get install -y --no-install-recommends \
     tzdata \
     openssh-server \
     sudo \
     curl \
     ca-certificates \
-    wget \
-    vim \
-    net-tools \
     supervisor \
     cron \
     unzip \
-    iputils-ping \
-    telnet \
-    git \
-    iproute2 && \
-    # 配置 MySQL 非交互式安装，避免在构建过程中停顿。
+    iproute2 \
+    python3.11 \
+    python3.11-venv && \
+    # 配置 MySQL 非交互式安装
     echo mysql-community-server mysql-community-server/root-pass password '' | debconf-set-selections && \
     echo mysql-community-server mysql-community-server/re-root-pass password '' | debconf-set-selections && \
     apt-get install -y mysql-server && \
-    # 清理 APT 缓存以减小镜像体积。
+    # 安装 pip
+    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+    python3.11 get-pip.py && \
+    rm get-pip.py && \
+    # --- 清理 ---
+    # 清理 APT 缓存，减小最终镜像体积
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    # 创建服务所需的目录，并设置权限。
-    mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/1panel && \
+    # --- 目录和权限配置 ---
+    mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/1panel /home/hr0530/mysql /home/hr0530/apps /var/log/supervisor /var/log/mysql && \
+    chown -R mysql:mysql /var/log/mysql /home/hr0530/mysql && \
     chmod 1777 /var/run/mysqld && \
     chmod +x /entrypoint.sh /usr/local/sbin/reboot && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
@@ -112,31 +117,14 @@ WORKDIR /root
 # ENV PATH="/usr/local/python3.10/bin:$PATH"
 
 # 安装 Python 3.10 的依赖包和 pip 包。
-RUN echo "export PATH=\"/usr/bin:$PATH\"" >> ~/.profile && \
-    echo "alias python=python3" >> ~/.bashrc && \
-    . ~/.profile && \
-    . ~/.bashrc && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
-    # 使用 get-pip.py 为 python3.11 安装 pip
-    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-    python3.11 get-pip.py && \
-    rm get-pip.py && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
 # --- Supervisor 配置 ---
-# 复制 Supervisor 配置文件并创建日志目录。
+# 复制 Supervisor 配置文件。日志目录已在核心安装步骤中创建。
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-RUN mkdir -p /var/log/supervisor /var/log/mysql && \
-    chown mysql:mysql /var/log/mysql
 
 # 复制并设置自定义启动脚本的权限。
 COPY start-1panel.sh /usr/local/bin/start-1panel.sh
-COPY start-mysql.sh /usr/local/bin/start-mysql.sh
 COPY start-gemini-balance.sh /usr/local/bin/start-gemini-balance.sh
 RUN chmod +x /usr/local/bin/start-1panel.sh \
-    /usr/local/bin/start-mysql.sh \
     /usr/local/bin/start-gemini-balance.sh
 
 # 声明单个持久化卷的挂载点。
