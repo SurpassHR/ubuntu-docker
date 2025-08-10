@@ -17,7 +17,9 @@ cd /home/hr0530/apps/gemini-balance
 # 进入 Python 虚拟环境
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt > /dev/null 2>&1
+echo "Installing requirements..."
+pip install -r requirements.txt
+echo "Requirements installed."
 
 # 若 $GEMINI_BALANCE_ENV_TYPE 为 docker 则复制 .docker.env 到 .env
 # 若 $GEMINI_BALANCE_ENV_TYPE 为 claw 则复制 .claw.env 到 .env
