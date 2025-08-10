@@ -20,7 +20,7 @@
 # --------------------------------------------------------------------------
 
 # --- 基础镜像设置 ---
-FROM ubuntu:22.04
+FROM boxcutter/python:3.11-slim-jammy
 
 # 设置环境变量，包括非交互式安装、时区和 SSH 凭据。
 # GEMINI_BALANCE_ENV_TYPE=docker/claw
@@ -53,20 +53,17 @@ RUN apt-get update && \
     supervisor \
     cron \
     unzip \
-    iproute2 \
-    python3.11 \
-    python3.11-venv && \
+    python3.11-venv \
+    iproute2 && \
     # 配置 MySQL 非交互式安装
     echo mysql-community-server mysql-community-server/root-pass password '' | debconf-set-selections && \
     echo mysql-community-server mysql-community-server/re-root-pass password '' | debconf-set-selections && \
     apt-get install -y mysql-server && \
-    # 安装 pip
-    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-    python3.11 get-pip.py && \
-    rm get-pip.py && \
     # --- 清理 ---
     # 清理 APT 缓存，减小最终镜像体积
     apt-get clean && \
+    # 清理数据库文件，因为要放到持久卷中
+    # rm -rf /var/lib/mysql && \
     rm -rf /var/lib/apt/lists/* && \
     # --- 目录和权限配置 ---
     mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/1panel /home/hr0530/mysql /home/hr0530/apps /var/log/supervisor /var/log/mysql && \
@@ -76,34 +73,33 @@ RUN apt-get update && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
     echo $TZ > /etc/timezone
 
+# # --- 1Panel 安装 ---
+# WORKDIR /home/hr0530/apps/1panel
 
-# --- 1Panel 安装 ---
-WORKDIR /home/hr0530/apps/1panel
+# # 复制自定义的安装脚本。
+# COPY install.override.sh .
+# COPY update_app_version.sh .
 
-# 复制自定义的安装脚本。
-COPY install.override.sh .
-COPY update_app_version.sh .
-
-# 下载、解压并运行 1Panel 的安装脚本。
-RUN INSTALL_MODE="stable" && \
-    ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "armhf" ]; then ARCH="armv7"; fi && \
-    if [ "$ARCH" = "ppc64el" ]; then ARCH="ppc64le"; fi && \
-    PACKAGE_FILE_NAME="1panel-${PANELVER}-linux-${ARCH}.tar.gz" && \
-    PACKAGE_DOWNLOAD_URL="https://resource.fit2cloud.com/1panel/package/${INSTALL_MODE}/${PANELVER}/release/${PACKAGE_FILE_NAME}" && \
-    echo "Downloading ${PACKAGE_DOWNLOAD_URL}" && \
-    curl -sSL -o ${PACKAGE_FILE_NAME} "$PACKAGE_DOWNLOAD_URL" && \
-    tar zxvf ${PACKAGE_FILE_NAME} --strip-components 1 && \
-    # 使用自定义的安装脚本替换默认脚本。
-    rm -f /home/hr0530/apps/1panel/install.sh && \
-    mv -f /home/hr0530/apps/1panel/install.override.sh /home/hr0530/apps/1panel/install.sh && \
-    chmod +x /home/hr0530/apps/1panel/install.sh /home/hr0530/apps/1panel/update_app_version.sh && \
-    # 执行安装脚本。
-    bash /home/hr0530/apps/1panel/install.sh --install-dir /home/hr0530/1panel && \
-    # 移动更新脚本到最终位置。
-    mv /home/hr0530/apps/1panel/update_app_version.sh /home/hr0530/1panel/ && \
-    # 清理安装文件。
-    rm -rf /home/hr0530/apps/1panel/*
+# # 下载、解压并运行 1Panel 的安装脚本。
+# RUN INSTALL_MODE="stable" && \
+#     ARCH=$(dpkg --print-architecture) && \
+#     if [ "$ARCH" = "armhf" ]; then ARCH="armv7"; fi && \
+#     if [ "$ARCH" = "ppc64el" ]; then ARCH="ppc64le"; fi && \
+#     PACKAGE_FILE_NAME="1panel-${PANELVER}-linux-${ARCH}.tar.gz" && \
+#     PACKAGE_DOWNLOAD_URL="https://resource.fit2cloud.com/1panel/package/${INSTALL_MODE}/${PANELVER}/release/${PACKAGE_FILE_NAME}" && \
+#     echo "Downloading ${PACKAGE_DOWNLOAD_URL}" && \
+#     curl -sSL -o ${PACKAGE_FILE_NAME} "$PACKAGE_DOWNLOAD_URL" && \
+#     tar zxvf ${PACKAGE_FILE_NAME} --strip-components 1 && \
+#     # 使用自定义的安装脚本替换默认脚本。
+#     rm -f /home/hr0530/apps/1panel/install.sh && \
+#     mv -f /home/hr0530/apps/1panel/install.override.sh /home/hr0530/apps/1panel/install.sh && \
+#     chmod +x /home/hr0530/apps/1panel/install.sh /home/hr0530/apps/1panel/update_app_version.sh && \
+#     # 执行安装脚本。
+#     bash /home/hr0530/apps/1panel/install.sh --install-dir /home/hr0530/1panel && \
+#     # 移动更新脚本到最终位置。
+#     mv /home/hr0530/apps/1panel/update_app_version.sh /home/hr0530/1panel/ && \
+#     # 清理安装文件。
+#     rm -rf /home/hr0530/apps/1panel/*
 
 # --- 最终配置 ---
 WORKDIR /root
@@ -124,8 +120,10 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # 复制并设置自定义启动脚本的权限。
 COPY start-1panel.sh /usr/local/bin/start-1panel.sh
 COPY start-gemini-balance.sh /usr/local/bin/start-gemini-balance.sh
+COPY init-mysql.sh /usr/local/bin/init-mysql.sh
 RUN chmod +x /usr/local/bin/start-1panel.sh \
-    /usr/local/bin/start-gemini-balance.sh
+    /usr/local/bin/start-gemini-balance.sh \
+    /usr/local/bin/init-mysql.sh
 
 # 声明单个持久化卷的挂载点。
 VOLUME /home/hr0530

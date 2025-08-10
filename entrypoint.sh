@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+# set -e
 
 # --- Initialization Lock ---
 # Use a lock file to ensure initialization runs only once.
@@ -23,8 +23,7 @@ if [ ! -f "$INIT_LOCK_FILE" ]; then
     echo "Initializing persistent storage directories in /home/hr0530..."
     DATA_DIR="/home/hr0530/data"
     APP_DIR="/home/hr0530/apps"
-    mkdir -p /home/hr0530/mysql /home/hr0530/1panel ${APP_DIR} ${DATA_DIR}
-    chown -R mysql:mysql /home/hr0530/mysql
+    mkdir -p /home/hr0530/1panel ${APP_DIR} ${DATA_DIR}
     echo "Storage directories initialized."
 
     # --- Application Deployment ---
@@ -36,39 +35,6 @@ if [ ! -f "$INIT_LOCK_FILE" ]; then
     else
         echo "Repository already exists. Skipping download."
     fi
-
-    echo "Installing Python dependencies for gemini-balance..."
-    cd "${GEMINI_BALANCE}"
-    python3.11 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    deactivate
-    echo "Python dependencies installed."
-
-    # --- Database Initialization ---
-    # To initialize the database, we need mysqld running temporarily.
-    # We start it directly and safely in the background.
-    echo "Starting temporary MySQL server for initialization..."
-    /usr/bin/mysqld_safe --user=mysql &
-    MYSQLD_PID=$!
-
-    echo "Waiting for MySQL service to be ready..."
-    # Wait for the MySQL socket to become available.
-    while ! mysqladmin ping -hlocalhost --silent; do
-        echo "  ... waiting for mysqld to accept connections"
-        sleep 2
-    done
-    echo "MySQL service is ready."
-
-    echo "Initializing database from /tmp/init.sql..."
-    mysql -u root < /tmp/init.sql
-    echo "Database initialized."
-
-    # Shut down the temporary MySQL server gracefully.
-    echo "Shutting down temporary MySQL server..."
-    mysqladmin -u root shutdown
-    wait $MYSQLD_PID
-    echo "Temporary MySQL server stopped."
 
     # --- Create Lock File ---
     touch "$INIT_LOCK_FILE"
