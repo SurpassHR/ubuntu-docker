@@ -63,7 +63,7 @@ RUN apt-get update && \
     # 清理 APT 缓存，减小最终镜像体积
     apt-get clean && \
     # 清理数据库文件，因为要放到持久卷中
-    # rm -rf /var/lib/mysql && \
+    mkdir -p /var/lib/mysql /var/lib/mysql-files /var/lib/mysql-keyring /var/lib/mysql-upgrade && \
     rm -rf /var/lib/apt/lists/* && \
     # --- 目录和权限配置 ---
     mkdir -p /var/run/sshd /var/run/mysqld /home/hr0530/1panel /home/hr0530/mysql /home/hr0530/apps /var/log/supervisor /var/log/mysql && \
