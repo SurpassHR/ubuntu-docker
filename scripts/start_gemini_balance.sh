@@ -1,9 +1,14 @@
 #!/bin/bash
 
 # 等待 MySQL 启动完成
-echo "Waiting for MySQL to start..."
-until mysql -u root -e "SELECT 1;" &> /dev/null; do
-    echo "Waiting for MySQL..."
+while ! mysqladmin ping -h 127.0.0.1 --silent; do
+    echo "Waiting for MySQL to start..."
+    sleep 1
+done
+
+# 等待 gemini-balance 目录创建完成
+while [ ! -d "/home/hr0530/apps/gemini-balance" ]; do
+    echo "Waiting for gemini-balance directory to be created..."
     sleep 1
 done
 
@@ -18,7 +23,7 @@ cd /home/hr0530/apps/gemini-balance
 python -m venv .venv
 source .venv/bin/activate
 echo "Installing requirements..."
-pip install -r requirements.txt
+pip install -r requirements.txt 2>&1 > /dev/null
 echo "Requirements installed."
 
 # 若 $GEMINI_BALANCE_ENV_TYPE 为 docker 则复制 .docker.env 到 .env

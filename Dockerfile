@@ -118,12 +118,14 @@ WORKDIR /root
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # 复制并设置自定义启动脚本的权限。
-COPY start-1panel.sh /usr/local/bin/start-1panel.sh
-COPY start-gemini-balance.sh /usr/local/bin/start-gemini-balance.sh
-COPY init-mysql.sh /usr/local/bin/init-mysql.sh
-RUN chmod +x /usr/local/bin/start-1panel.sh \
-    /usr/local/bin/start-gemini-balance.sh \
-    /usr/local/bin/init-mysql.sh
+COPY scripts/start_1panel.sh /usr/local/bin/start_1panel.sh
+COPY scripts/start_gemini_balance.sh /usr/local/bin/start_gemini_balance.sh
+COPY scripts/init_mysql.sh /usr/local/bin/init_mysql.sh
+COPY scripts/watch_mysql_log.sh /usr/local/bin/watch_mysql_log.sh
+RUN chmod +x /usr/local/bin/start_1panel.sh \
+    /usr/local/bin/start_gemini_balance.sh \
+    /usr/local/bin/init_mysql.sh \
+    /usr/local/bin/watch_mysql_log.sh
 
 # 声明单个持久化卷的挂载点。
 VOLUME /home/hr0530

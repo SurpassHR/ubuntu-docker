@@ -1,7 +1,7 @@
 # !/bin/bash
 
 # 删除挂载点
-rm -rf ./mapdata
+rm -rf ./mapdata/.initialized ./mapdata/mysql/*
 
 # 删除无用容器
 docker container rm -f $(docker container list -q)

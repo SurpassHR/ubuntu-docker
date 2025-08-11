@@ -23,7 +23,12 @@ if [ ! -f "$INIT_LOCK_FILE" ]; then
     echo "Initializing persistent storage directories in /home/hr0530..."
     DATA_DIR="/home/hr0530/data"
     APP_DIR="/home/hr0530/apps"
-    mkdir -p /home/hr0530/1panel ${APP_DIR} ${DATA_DIR}
+    # 等待 DATA_DIR 和 APP_DIR 目录创建
+    while [ ! -d ${DATA_DIR} ] || [ ! -d ${APP_DIR} ]; do
+        echo "Waiting for directories to be created..."
+        mkdir -p /home/hr0530/1panel ${APP_DIR} ${DATA_DIR}
+        sleep 1
+    done
     echo "Storage directories initialized."
 
     # --- Application Deployment ---
@@ -31,7 +36,9 @@ if [ ! -f "$INIT_LOCK_FILE" ]; then
     if [ ! -d "${GEMINI_BALANCE}" ]; then
         echo "Downloading gemini-balance repository..."
         curl https://codeload.github.com/SurpassHR/gemini-balance/zip/refs/heads/main > ${DATA_DIR}/gemini-balance.zip && \
-        unzip ${DATA_DIR}/gemini-balance.zip -d "${APP_DIR}" && mv "${APP_DIR}/gemini-balance-main" "${GEMINI_BALANCE}"
+        # 正常日志重定向到 /dev/null，错误日志展示在终端
+        unzip ${DATA_DIR}/gemini-balance.zip -d "${APP_DIR}" && mv "${APP_DIR}/gemini-balance-main" "${GEMINI_BALANCE}" 2>&1 > /dev/null && \
+        rm -rf ${DATA_DIR}/gemini-balance.zip
     else
         echo "Repository already exists. Skipping download."
     fi
